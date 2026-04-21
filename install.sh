@@ -90,11 +90,15 @@ ensure_node() {
   fi
 }
 
-install_claude() {
-  info "Installing Claude Code..."
+install_claude_cask() {
+  info "Installing Claude via Homebrew Cask..."
+  brew install --cask claude
+}
+
+install_claude_npm() {
+  info "Installing Claude Code via npm..."
   local npm_flags="--global --prefer-offline"
 
-  # Prefer global install without sudo when npm prefix is user-writable
   if npm install $npm_flags "$PACKAGE" 2>/dev/null; then
     return 0
   fi
@@ -108,22 +112,45 @@ install_claude() {
   fi
 }
 
+install_claude() {
+  local os
+  os=$(detect_os)
+
+  if [ "$os" = "macos" ] && has_cmd brew; then
+    install_claude_cask
+  else
+    ensure_node
+    install_claude_npm
+  fi
+}
+
 verify_install() {
   if has_cmd claude; then
     success "Claude Code installed successfully!"
     printf "Version: %s\n" "$(claude --version 2>/dev/null || echo 'unknown')"
-  else
-    # npm bin may not be on PATH yet in this shell session
-    local npm_bin
-    npm_bin=$(npm bin -g 2>/dev/null || true)
-    if [ -n "$npm_bin" ] && [ -x "$npm_bin/claude" ]; then
-      success "Claude Code installed to $npm_bin/claude"
-      warn "Add $npm_bin to your PATH to use 'claude' directly."
-    else
-      warn "Installation complete, but 'claude' was not found on PATH."
-      warn "You may need to restart your shell or update your PATH."
-    fi
+    return 0
   fi
+
+  # Cask installs the .app bundle; CLI symlink may not be on PATH yet
+  local cask_cli="/Applications/Claude.app/Contents/MacOS/claude"
+  if [ -x "$cask_cli" ]; then
+    success "Claude installed via Homebrew Cask."
+    warn "'claude' is not yet on your PATH. Add this to your shell profile:"
+    warn "  export PATH=\"/Applications/Claude.app/Contents/MacOS:\$PATH\""
+    return 0
+  fi
+
+  # npm global bin may not be on PATH in this shell session
+  local npm_bin
+  npm_bin=$(npm bin -g 2>/dev/null || true)
+  if [ -n "$npm_bin" ] && [ -x "$npm_bin/claude" ]; then
+    success "Claude Code installed to $npm_bin/claude"
+    warn "Add $npm_bin to your PATH to use 'claude' directly."
+    return 0
+  fi
+
+  warn "Installation complete, but 'claude' was not found on PATH."
+  warn "You may need to restart your shell or update your PATH."
 }
 
 print_next_steps() {
@@ -137,7 +164,6 @@ main() {
   info "Claude Code Installer"
   printf "OS: %s / Arch: %s\n\n" "$(detect_os)" "$(detect_arch)"
 
-  ensure_node
   install_claude
   verify_install
   print_next_steps
